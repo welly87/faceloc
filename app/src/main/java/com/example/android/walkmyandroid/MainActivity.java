@@ -19,12 +19,15 @@ import android.Manifest;
 import android.animation.AnimatorInflater;
 import android.animation.AnimatorSet;
 import android.app.Activity;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.location.Location;
+import android.media.ExifInterface;
 import android.os.Bundle;
 import android.os.Environment;
 import android.support.annotation.NonNull;
@@ -69,6 +72,7 @@ public class MainActivity extends AppCompatActivity {
     // Constants
     private static final int REQUEST_LOCATION_PERMISSION = 1;
     private static final String TRACKING_LOCATION_KEY = "tracking_location";
+    private static final int CAMERA_REQUEST = 102;
 
     // Views
     private Button mLocationButton;
@@ -115,8 +119,8 @@ public class MainActivity extends AppCompatActivity {
 
         Retrofit retrofit = new Retrofit.Builder()
                 .addConverterFactory(GsonConverterFactory.create())
-//                .baseUrl("https://api.andalsoftware.com:5003")
-                .baseUrl("http://52.187.1.152:5003")
+                .baseUrl("http://api.andalsoftware.com:5003")
+//                .baseUrl("http://52.187.1.152:5003")
                 .build();
 
         service = retrofit.create(AttendanceService.class);
@@ -147,8 +151,8 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
                 if (!mTrackingLocation) {
-                    startCapture();
-
+//                    startCapture();
+                    takeImageFromCamera();
                     startTrackingLocation();
                 } else {
                     stopTrackingLocation();
@@ -178,6 +182,90 @@ public class MainActivity extends AppCompatActivity {
             }
         };
     }
+
+    public void takeImageFromCamera() {
+        System.out.println("takeImageFromCamera");
+        Intent cameraIntent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+        startActivityForResult(cameraIntent, CAMERA_REQUEST);
+    }
+
+    private void writePhoto(Bitmap bitmap) {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        bitmap = Bitmap.createScaledBitmap(bitmap, bitmap.getWidth(), bitmap.getHeight(), false);
+        bitmap.compress(Bitmap.CompressFormat.JPEG,100, bos);
+        byte[] data1 = bos.toByteArray();
+
+        File pictureFile = getOutputMediaFile(1);
+
+        try {
+            FileOutputStream fos = new FileOutputStream(pictureFile);
+            fos.write(data1);
+            fos.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == CAMERA_REQUEST && resultCode == RESULT_OK) {
+            Bitmap bitmap = (Bitmap) data.getExtras().get("data");
+
+            System.out.println("write photo");
+
+            Bitmap potrait = rotateImage(bitmap, 270);
+
+//            writePhoto(bitmap);
+
+            File pictureFile = getOutputMediaFile(1);
+
+            System.out.println("write photo rotate");
+
+            writePhoto(potrait);
+
+            //panggil method uploadImage
+            cameraStream.onNext(getOutputMediaFile(1));
+        }
+    }
+
+    private Bitmap makeItPotrait(String photoPath, Bitmap bitmap) throws IOException {
+        System.out.println(photoPath);
+        ExifInterface ei = new ExifInterface(photoPath);
+        int orientation = ei.getAttributeInt(ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_UNDEFINED);
+
+        Bitmap rotatedBitmap = null;
+        switch(orientation) {
+
+            case ExifInterface.ORIENTATION_ROTATE_90:
+                rotatedBitmap = rotateImage(bitmap, 90);
+                break;
+
+            case ExifInterface.ORIENTATION_ROTATE_180:
+                rotatedBitmap = rotateImage(bitmap, 180);
+                break;
+
+            case ExifInterface.ORIENTATION_ROTATE_270:
+                rotatedBitmap = rotateImage(bitmap, 270);
+                break;
+
+            case ExifInterface.ORIENTATION_NORMAL:
+            default:
+                rotatedBitmap = bitmap;
+        }
+
+        return rotatedBitmap;
+    }
+
+    public static Bitmap rotateImage(Bitmap source, float angle) {
+        System.out.println("rotate " + angle);
+
+        Matrix matrix = new Matrix();
+        matrix.postRotate(angle);
+        return Bitmap.createBitmap(source, 0, 0, source.getWidth(), source.getHeight(),
+                matrix, true);
+    }
+
 
     private void checkAttendance(File file, Location location) {
         HashMap<String, RequestBody> map = new HashMap<>();
@@ -258,7 +346,7 @@ public class MainActivity extends AppCompatActivity {
         File mediaFile;
         if (type == MEDIA_TYPE_IMAGE){
             mediaFile = new File(mediaStorageDir.getPath() + File.separator +
-                    "face.png");
+                    "face.jpg");
         } else {
             return null;
         }
@@ -280,15 +368,15 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length);
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            bitmap = Bitmap.createScaledBitmap(bitmap, 100, 100, false);
-            bitmap.compress(Bitmap.CompressFormat.PNG,0, bos);
-            byte[] bitmapdata = bos.toByteArray();
+//            Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length);
+//            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+//            bitmap = Bitmap.createScaledBitmap(bitmap, 100, 100, false);
+//            bitmap.compress(Bitmap.CompressFormat.PNG,0, bos);
+//            data = bos.toByteArray();
 
             try {
                 FileOutputStream fos = new FileOutputStream(pictureFile);
-                fos.write(bitmapdata);
+                fos.write(data);
                 fos.close();
 
                 cameraStream.onNext(pictureFile);
@@ -329,6 +417,7 @@ public class MainActivity extends AppCompatActivity {
 //                        params.setPictureSize(1280, 720);
                         params.setWhiteBalance(Camera.Parameters.WHITE_BALANCE_AUTO);
 
+                        camera.setDisplayOrientation(90);
                         camera.setParameters(params);
 
                         SurfaceTexture st = new SurfaceTexture(MODE_PRIVATE);
